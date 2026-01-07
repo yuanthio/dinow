@@ -1,0 +1,174 @@
+//prisma
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+    directUrl = env("DIRECT_URL")
+}
+
+enum Priority {
+    HIGH
+    MEDIUM
+    LOW
+}
+
+enum Category {
+    PERSONAL
+    WORK
+    STUDY
+    HEALTH
+    FINANCE
+    HOBBY
+    OTHER
+}
+
+enum AccessRole {
+    OWNER
+    EDITOR
+    VIEWER
+}
+
+enum InvitationStatus {
+    PENDING
+    ACCEPTED
+    REJECTED
+}
+
+model User {
+    id       Int     @id @default(autoincrement())
+    email    String  @unique
+    password String
+    username String?
+
+    boards Board[]
+
+    accesses BoardAccess[] @relation("UserAccesses") // 💡 Rename dari DashboardAccess
+
+    sentInvitations BoardInvitation[] @relation("SentInvitations") // 💡 Rename
+
+    receivedInvitations BoardInvitation[] @relation("ReceivedInvitations") // 💡 Rename
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Board {
+    id       Int       @id @default(autoincrement())
+    userId   Int
+    name     String
+    priority Priority  @default(LOW)
+    deadline DateTime?
+    category Category  @default(PERSONAL)
+    imageUrl String?
+    bgColor String?
+    
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    columns Column[]
+
+    cards Card[]
+
+    members     BoardAccess[]     @relation("BoardMembers") // 💡 Rename
+    invitations BoardInvitation[] // 💡 Rename
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Column {
+    id      Int    @id @default(autoincrement())
+    boardId Int
+    title   String
+    order   Int    @default(0)
+
+    board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+    cards Card[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([boardId, order])
+}
+
+model Card {
+  id Int @id @default(autoincrement())
+
+  boardId Int
+
+  columnId Int
+
+  title       String
+  description String?
+  // 💡 Kembalikan field checklist untuk menyimpan progress
+  checklist Json? // Untuk menyimpan progress checklist secara caching
+  
+  imageUrl String? // 💡 Field baru untuk gambar
+
+  order Int @default(0)
+
+  board  Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  column Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  // 💡 Relasi baru: Card memiliki banyak ChecklistItem
+  checklistItems ChecklistItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([columnId, order])
+  @@index([boardId])
+}
+
+// 💡 MODEL BARU: ChecklistItem
+model ChecklistItem {
+    id        Int     @id @default(autoincrement())
+    cardId    Int
+    text      String
+    completed Boolean @default(false)
+    order     Int     @default(0) // Untuk reordering checklist item di dalam card
+
+    card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([cardId, order])
+}
+
+model BoardAccess {
+    userId  Int
+    boardId Int
+
+    role AccessRole
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    user  User  @relation("UserAccesses", fields: [userId], references: [id], onDelete: Cascade)
+    board Board @relation("BoardMembers", fields: [boardId], references: [id], onDelete: Cascade) // 💡 Rename
+
+    @@id([userId, boardId]) // 💡 Rename
+}
+
+model BoardInvitation {
+    id          Int              @id @default(autoincrement())
+    boardId     Int
+    senderId    Int
+    recipientId Int
+    targetRole  AccessRole
+    status      InvitationStatus @default(PENDING)
+
+    createdAt DateTime @default(now())
+
+    board     Board @relation(fields: [boardId], references: [id], onDelete: Cascade) // 💡 Rename
+    sender    User  @relation("SentInvitations", fields: [senderId], references: [id], onDelete: Restrict)
+    recipient User  @relation("ReceivedInvitations", fields: [recipientId], references: [id], onDelete: Restrict)
+
+    @@unique([boardId, recipientId]) // 💡 Rename
+}
